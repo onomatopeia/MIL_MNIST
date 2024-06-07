@@ -11,7 +11,7 @@ class MnistBags(data.Dataset):
         self,
         target_number=7,
         mean_bag_length=10,
-        var_bag_length=2,
+        std_bag_length=2,
         min_bag_length=5,
         max_bag_length=250000000,
         num_bag=250,
@@ -20,7 +20,7 @@ class MnistBags(data.Dataset):
     ) -> None:
         self.target_number = target_number
         self.mean_bag_length = mean_bag_length
-        self.var_bag_length = var_bag_length
+        self.std_bag_length = std_bag_length
         self.min_bag_length = min_bag_length
         self.max_bag_length = max_bag_length
         self.num_bag = num_bag
@@ -53,7 +53,7 @@ class MnistBags(data.Dataset):
 
         bag_sizes = self.rng.normal(
             loc=self.mean_bag_length,
-            scale=self.var_bag_length,
+            scale=self.std_bag_length,
             size=self.num_bag,
         )
         bag_sizes = np.round(bag_sizes).astype(int)
@@ -63,7 +63,7 @@ class MnistBags(data.Dataset):
                 self.rng.integers(0, self.num_samples, bag_size, endpoint=True)
             )
             bags_list.append(all_images[indices])
-            labels_list.append(all_labels[indices] == self.target_number)
+            labels_list.append((all_labels[indices] == self.target_number).int())
 
         return bags_list, labels_list
 

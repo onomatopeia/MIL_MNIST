@@ -12,6 +12,6 @@ def test_mnist_bags():
         assert len(bag) == len(images_labels)
         assert bag_label in [0, 1]
         if bag_label == 0:
-            assert True not in images_labels
+            assert 1 not in images_labels
         else:
-            assert True in images_labels
+            assert 1 in images_labels
