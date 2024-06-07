@@ -73,7 +73,6 @@ class MultiHeadAttentionNetwork(nn.Module):
     def __init__(
         self,
         gated: bool = True,
-        size_arg: str = "small",
         dropout: bool = False,
         temperature: Sequence[float] = (1, 1),
         head_size: str = "small"
@@ -83,15 +82,13 @@ class MultiHeadAttentionNetwork(nn.Module):
 
         Args:
             gated (bool): whether to use gated attention network
-            size_arg (str): config for network size
             dropout (bool): whether to use dropout
             temperature (sequence): temperature scaling values for each head
             head_size (str): size of each head
         """
         super().__init__()
         self.n_heads = len(temperature)
-        self.size_dict = {"small": [784, 128, 256]}
-        self.size = self.size_dict[size_arg]
+        self.size = [784, 128, 256]
         self.temperature = temperature
 
         if self.size[1] % self.n_heads != 0:

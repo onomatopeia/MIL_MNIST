@@ -64,7 +64,7 @@ def train(
     return train_loss
 
 
-def test(
+def eval(
     model: nn.Module,
     data_loader: data.DataLoader,
     loss_func: nn.Module,

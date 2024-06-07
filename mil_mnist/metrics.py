@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from torcheval.metrics import BinaryAccuracy, BinaryF1Score
 
 ACCURACY = 'Accuracy'
@@ -23,3 +25,11 @@ class MetricsManager:
     def reset(self):
         self.accuracy.reset()
         self.f1_score.reset()
+
+
+def combine_metrics(metrics_collection: list[dict[str, float]]) -> dict[str, list[float]]:
+    output = defaultdict(list)
+    for metrics in metrics_collection:
+        for key, value in metrics.items():
+            output[key].append(value)
+    return dict(output)

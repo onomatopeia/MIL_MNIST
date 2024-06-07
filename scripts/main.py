@@ -7,9 +7,10 @@ from torch.utils import data
 from constants import RESULTS_DIR
 from data import MnistBags
 from data_loader import describe_bags
-from metrics import MetricsManager
+from metrics import MetricsManager, combine_metrics
 from model import MultiHeadAttentionNetwork
-from trainer import EarlyStopping, get_optimizer, test, train
+from trainer import EarlyStopping, get_optimizer, eval, train
+from visualization import plot_loss, plot_metrics
 
 if __name__ == "__main__":
 
@@ -71,13 +72,12 @@ if __name__ == "__main__":
         '--num_bags_test', type=int, default=50, metavar='NTest', help='number of bags in test set'
     )
     parser.add_argument(
-        '--seed', type=int, default=123423, metavar='S', help='random seed (default: 123423)'
+        '--seed', type=int, default=64210987, metavar='S', help='random seed (default: 123423)'
     )
     parser.add_argument(
         '--no-cuda', action='store_true', default=False, help='disables CUDA training'
     )
-    parser.add_argument('--gated', type=bool, default=True, help='turns on gated attentions')
-    parser.add_argument('--size', type=str, default='small', help='network size')
+    parser.add_argument('--gated', type=bool, default=False, help='turns on gated attentions')
     parser.add_argument('--use_dropout', type=bool, default=False, help='whether to use dropout')
     parser.add_argument(
         '--temperature',
@@ -86,11 +86,17 @@ if __name__ == "__main__":
         default=[1, 1],
         help='list of temperatures',
     )
-    parser.add_argument('--head_size', type=str, default='small', help='head size')
+    parser.add_argument(
+        '--head_size',
+        type=str,
+        default='small',
+        choices=['tiny', 'small', 'same', 'None'],
+        help='head size',
+    )
     parser.add_argument(
         '--opt',
         type=str,
-        default='sgd',
+        default='adam',
         choices=['adam', 'sgd'],
         help='optimizer'
     )
@@ -146,7 +152,6 @@ if __name__ == "__main__":
     print('Initialize Model')
     model = MultiHeadAttentionNetwork(
         args.gated,
-        args.size,
         args.use_dropout,
         args.temperature,
         args.head_size
@@ -159,31 +164,44 @@ if __name__ == "__main__":
     metrics = MetricsManager()
     early_stopping = EarlyStopping(2)
 
-    train_statistics = []
-    val_statistics = []
+    train_losses = []
+    val_losses = []
+    train_metrics = []
+    val_metrics = []
 
     print('Start Training')
     for epoch in range(args.epochs):
         metrics.reset()
-        train_loss = train(model, train_loader, optimizer, criterion, args.cuda, metrics)
-        train_metrics = metrics.compute()
-        metrics_str = ', '.join([f'{key}: {value}' for key, value in train_metrics.items()])
-        print(f'Epoch: {epoch + 1}/{args.epochs}, Train loss: {train_loss:.4f}, {metrics_str}')
+        train_losses.append(train(model, train_loader, optimizer, criterion, args.cuda, metrics))
+        train_metrics.append(metrics.compute())
+        metrics_str = ', '.join([f'{key}: {value}' for key, value in train_metrics[-1].items()])
+        print(
+            f'Epoch: {epoch + 1}/{args.epochs}, Train loss: {train_losses[-1]:.4f}, {metrics_str}'
+        )
 
         metrics.reset()
-        val_loss = test(model, val_loader, criterion, args.cuda, metrics)
-        val_metrics = metrics.compute()
-        metrics_str = ', '.join([f'{key}: {value}' for key, value in val_metrics.items()])
-        print(f'\nValidation Set, Loss: {val_loss:.4f}, {metrics_str}')
+        val_losses.append(eval(model, val_loader, criterion, args.cuda, metrics))
+        val_metrics.append(metrics.compute())
+        metrics_str = ', '.join([f'{key}: {value}' for key, value in val_metrics[-1].items()])
+        print(f'Validation Set, Loss: {val_losses[-1]:.4f}, {metrics_str}')
 
-        if early_stopping.should_stop(model, val_loss):
+        if early_stopping.should_stop(model, val_losses[-1]):
             break
+
+    train_metrics_combined = combine_metrics(train_metrics)
+    val_metrics_combined = combine_metrics(val_metrics)
 
     model.load_state_dict(torch.load(RESULTS_DIR.joinpath('checkpoint.pt')))
 
-    print('Start Testing')
+    print('\nStart Testing')
     metrics.reset()
-    test_loss = test(model, test_loader, criterion, args.cuda, metrics)
+    test_loss = eval(model, test_loader, criterion, args.cuda, metrics)
     test_metrics = metrics.compute()
     metrics_str = ', '.join([f'{key}: {value}' for key, value in test_metrics.items()])
-    print(f'\nTest Set, Loss: {test_loss:.4f}, {metrics_str}')
+    print(f'Test Set, Loss: {test_loss:.4f}, {metrics_str}')
+
+    plot_loss(train_losses, val_losses).write_image(RESULTS_DIR.joinpath('losses.png'), scale=3)
+    plot_metrics(
+        train_metrics_combined,
+        val_metrics_combined,
+    ).write_image(RESULTS_DIR.joinpath('metrics.png'), scale=3)
