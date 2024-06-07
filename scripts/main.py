@@ -1,13 +1,30 @@
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 import argparse
 
 import numpy as np
 import torch
-from torch import nn, optim
+from torch import nn
 from torch.utils import data
 
 from data_loader import MnistBags
-from trainer import get_optimizer, test, train
+from metrics import MetricsManager
 from model import MultiHeadAttentionNetwork
+from trainer import get_optimizer, test, train
+
+
+def describe_bags(data_loader: data.DataLoader, phase: str) -> None:
+    bag_lengths = []
+    positive_bags = 0
+    for batch_idx, (bag, label) in enumerate(data_loader):
+        bag_lengths.append(int(bag.squeeze(0).size()[0]))
+        positive_bags += label[0].numpy()[0]
+    print(
+        f'Number positive {phase} bags: {positive_bags}/{len(data_loader)}\n'
+        f'Number of instances per bag, mean: {np.mean(bag_lengths)}, '
+        f'min: {np.min(bag_lengths)}, max {np.max(bag_lengths)}\n'
+    )
+
 
 if __name__ == "__main__":
 
@@ -18,9 +35,9 @@ if __name__ == "__main__":
     parser.add_argument(
         '--epochs',
         type=int,
-        default=10,
+        default=7,
         metavar='N',
-        help='number of epochs to train (default: 10)'
+        help='number of epochs to train (default: 7)'
     )
     parser.add_argument(
         '--lr', type=float, default=0.0005, metavar='LR', help='learning rate (default: 0.0005)'
@@ -78,7 +95,13 @@ if __name__ == "__main__":
         help='list of temperatures',
     )
     parser.add_argument('--head_size', type=str, default='small', help='head size')
-    parser.add_argument('--opt', type=str, default='adam', choices=['adam', 'sgd'], help='optimizer')
+    parser.add_argument(
+        '--opt',
+        type=str,
+        default='adam',
+        choices=['adam', 'sgd'],
+        help='optimizer'
+        )
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -122,33 +145,10 @@ if __name__ == "__main__":
         **loader_kwargs,
     )
 
-    len_bag_list_train = []
-    mnist_bags_train = 0
-    for batch_idx, (bag, label) in enumerate(train_loader):
-        len_bag_list_train.append(int(bag.squeeze(0).size()[0]))
-        mnist_bags_train += label[0].numpy()[0]
-    print(
-        'Number positive train bags: {}/{}\n'
-        'Number of instances per bag, mean: {}, max: {}, min {}\n'.format(
-            mnist_bags_train, len(train_loader),
-            np.mean(len_bag_list_train), np.max(len_bag_list_train), np.min(len_bag_list_train)
-        )
-    )
+    describe_bags(train_loader, 'train')
+    describe_bags(test_loader, 'test')
 
-    len_bag_list_test = []
-    mnist_bags_test = 0
-    for batch_idx, (bag, label) in enumerate(test_loader):
-        len_bag_list_test.append(int(bag.squeeze(0).size()[0]))
-        mnist_bags_test += label[0].numpy()[0]
-    print(
-        'Number positive test bags: {}/{}\n'
-        'Number of instances per bag, mean: {}, max: {}, min {}\n'.format(
-            mnist_bags_test, len(test_loader),
-            np.mean(len_bag_list_test), np.max(len_bag_list_test), np.min(len_bag_list_test)
-        )
-    )
-
-    print('Init Model')
+    print('Initialize Model')
     model = MultiHeadAttentionNetwork(
         args.gated,
         args.size,
@@ -160,8 +160,20 @@ if __name__ == "__main__":
         model.cuda()
 
     optimizer = get_optimizer(model, args)
-    loss_func = nn.CrossEntropyLoss()
+    criterion = nn.BCELoss()
+    metrics = MetricsManager()
+
     print('Start Training')
-    train(args.epochs, model, train_loader, optimizer, loss_func, args.cuda)
+    for epoch in range(args.epochs):
+        metrics.reset()
+        train_loss = train(model, train_loader, optimizer, criterion, args.cuda, metrics)
+        train_metrics = metrics.compute()
+        metrics_str = ', '.join([f'{key}: {value}' for key, value in train_metrics.items()])
+        print(f'Epoch: {epoch + 1}/{args.epochs}, Train loss: {train_loss:.4f}, {metrics_str}')
+
     print('Start Testing')
-    test(model, test_loader, loss_func, args.cuda)
+    metrics.reset()
+    test_loss = test(model, test_loader, criterion, args.cuda, metrics)
+    test_metrics = metrics.compute()
+    metrics_str = ', '.join([f'{key}: {value}' for key, value in test_metrics.items()])
+    print(f'\nTest Set, Loss: {test_loss:.4f}, {metrics_str}')

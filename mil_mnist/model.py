@@ -128,17 +128,8 @@ class MultiHeadAttentionNetwork(nn.Module):
 
         self.net_general = nn.Sequential(*fc)
         self.attention_net = nn.ModuleList(att_net)
-        self.classifiers = nn.Linear(self.size[1], 2)
+        self.classifiers = nn.Linear(self.size[1], 1)
         initialize_weights(self)
-
-    def relocate(self):
-        """
-        Relocates the model to GPU if available, else to CPU.
-        """
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.net_general = self.net_general.to(device)
-        self.attention_net = self.attention_net.to(device)
-        self.classifiers = self.classifiers.to(device)
 
     def forward(self, h):
         """
@@ -169,7 +160,6 @@ class MultiHeadAttentionNetwork(nn.Module):
         # Temperature scaling
         for head_idx, head_temp in enumerate(self.temperature):
             A[:, head_idx, :] = A[:, head_idx, :] / head_temp
-        A_raw = A
 
         A = F.softmax(A, dim=-1)  # softmax over N
 
@@ -180,10 +170,10 @@ class MultiHeadAttentionNetwork(nn.Module):
             M[:, self.step * head: self.step * head + self.step] = m
 
         # Singlehead Classification
-        logits = self.classifiers(M)
-        Y_hat = torch.topk(logits, 1, dim=1)[1]
-        Y_prob = F.softmax(logits, dim=1)
-        return logits, Y_prob, Y_hat
+        logits = torch.squeeze(self.classifiers(M), dim=1)
+        Y_prob = F.sigmoid(logits)
+        Y_hat = torch.ge(Y_prob, 0.5).float()
+        return Y_prob, Y_hat
 
 
 def initialize_weights(module: nn.Module) -> None:
