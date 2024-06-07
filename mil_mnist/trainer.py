@@ -1,11 +1,36 @@
 from __future__ import print_function
 
+import numpy as np
 import torch
 from torch import nn, optim
 from torch.utils import data
-from tqdm import tqdm
 
+from constants import RESULTS_DIR
 from metrics import MetricsManager
+
+
+class EarlyStopping:
+    def __init__(self, patience: int) -> None:
+        self.patience = patience
+        self.best_val_loss = np.inf
+        self.epochs_no_improve = 0
+
+    def should_stop(self, model: nn.Module, validation_loss: float) -> bool:
+        if validation_loss < self.best_val_loss:
+            self.best_val_loss = validation_loss
+            self.epochs_no_improve = 0
+            self.save_checkpoint(model)
+        else:
+            self.epochs_no_improve += 1
+            if self.epochs_no_improve >= self.patience:
+                print(f'Early stopping triggered after {self.patience} epochs without improvement.')
+                return True
+        return False
+
+    @classmethod
+    def save_checkpoint(cls, model: nn.Module) -> None:
+        RESULTS_DIR.mkdir(exist_ok=True)
+        torch.save(model.state_dict(), RESULTS_DIR.joinpath('checkpoint.pt'))
 
 
 def train(
@@ -16,12 +41,12 @@ def train(
     use_cuda: bool,
     metrics: MetricsManager,
 ) -> float:
-    device = torch.device("cuda" if use_cuda and torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if use_cuda else "cpu")
 
     model.train()
     train_loss = 0.0
 
-    for batch_idx, (bag, label) in enumerate(tqdm(data_loader)):
+    for batch_idx, (bag, label) in enumerate(data_loader):
         bag_label = label[0]
         bag_label = bag_label.type(torch.FloatTensor)
         bag, bag_label = bag.to(device), bag_label.to(device)
@@ -46,7 +71,7 @@ def test(
     use_cuda: bool,
     metrics: MetricsManager,
 ) -> float:
-    device = torch.device("cuda" if use_cuda and torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if use_cuda else "cpu")
     model.eval()
     test_loss = 0.0
 
@@ -65,7 +90,7 @@ def test(
     return test_loss
 
 
-def get_optimizer(model, args):
+def get_optimizer(model: nn.Module, args):
     if args.opt == "adam":
         optimizer = optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()),
